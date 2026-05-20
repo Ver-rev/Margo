@@ -21,8 +21,8 @@
         enableTreeFallback: false,
         enableRandomFallback: true,
         randomFallbackRange: 8,
-        passageTypes: [7], // Najczęściej typ 7 oznacza przejście/portal w Margonem
-        enablePassageDebug: false
+        passageTypes: [7, 8, 9, 10, 11, 12], // Rozszerzone typy przejść/portali
+        enablePassageDebug: true
     };
 
     const SCRIPT_VERSION = '2.8';
@@ -148,17 +148,35 @@
         const heroY = engine.hero.d.y;
         let nearest = null;
         let best = Infinity;
+        let fallbackNearest = null;
+        let fallbackBest = Infinity;
 
         for (const npc of getNpcList()) {
-            if (!isPassageNpc(npc)) continue;
+            if (!npc?.d) continue;
             const dist = getDistance(heroX, heroY, npc.d.x, npc.d.y);
-            if (dist < best) {
-                best = dist;
-                nearest = npc;
+            if (isPassageNpc(npc)) {
+                if (dist < best) {
+                    best = dist;
+                    nearest = npc;
+                }
+                continue;
+            }
+
+            // Jeśli nie ma dopasowanego typu przejścia, użyjemy kandydata
+            // który nie jest potworem i nie jest drzewem.
+            if (!isMonster(npc) && npc.d.type !== 4) {
+                if (dist < fallbackBest) {
+                    fallbackBest = dist;
+                    fallbackNearest = npc;
+                }
             }
         }
 
-        return nearest;
+        if (nearest) return nearest;
+        if (CONFIG.enablePassageDebug && fallbackNearest) {
+            addLog('DEBUG', 'Nie znaleziono typu przejścia, używam kandydata fallback', 'type', fallbackNearest.d.type, 'id', fallbackNearest.d.id, 'pos', fallbackNearest.d.x, fallbackNearest.d.y);
+        }
+        return fallbackNearest;
     }
 
     function getNearestTree() {
