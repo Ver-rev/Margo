@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -21,7 +21,7 @@
         enableTreeFallback: false,
         enableRandomFallback: true,
         randomFallbackRange: 8,
-        passageTypes: [7],
+        passageTypes: [],
         enablePassageDebug: false
     };
 
@@ -241,15 +241,7 @@
                 return;
             }
 
-            const passage = getNearestPassage();
-            if (passage) {
-                addLog('INFO', 'Znaleziono przejście', passage.d.id, passage.d.x, passage.d.y);
-                if (walkTo(passage.d.x, passage.d.y)) return;
-                addLog('WARN', 'Nie udało się ruszyć do przejścia');
-            } else {
-                addLog('DEBUG', 'Brak przejścia do zabrania');
-            }
-
+            // Pomijamy przejścia, by bot nie podchodził do roślin i fałszywych obiektów.
             const target = getNearestMonster();
             if (target) {
                 addLog('INFO', 'Idę do potwora', target.d.id, target.d.lvl, target.d.x, target.d.y);
