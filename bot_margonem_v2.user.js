@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.4
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -18,7 +18,7 @@
         isRunning: false,
         maxLevelDiff: 30,
         minLevelDiff: 5,
-        enableTreeFallback: true,
+        enableTreeFallback: false,
         enableRandomFallback: true,
         randomFallbackRange: 8,
         passageTypes: [7],
