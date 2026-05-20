@@ -19,15 +19,20 @@ MINIMAP_REGION = (2031, 503, 200, 200)
 MINIMAP_CENTER = (2131, 603)
 
 # Kolor kwadracika potwora lub znacznika na minimapie w formacie (R, G, B).
-# Jeśli twoja minimapa pokazuje potwory jako różowe kropki, ustaw tutaj ten kolor.
-# Możesz też dodać kilka wariantów kolorów, jeśli gracze używają różnych skórek / dodatków.
+# Używamy tylko rzeczywistych kolorów potworów, żeby nie wyłapywać fałszywych punktów.
+# Jeśli potrzebujesz dodatkowych wariantów, dodaj je tutaj.
 MONSTER_COLORS = [
-    (220, 222, 223),  # szary
-    (255, 182, 193),  # jasny różowy
-    (255, 105, 180),  # średni różowy
-    (255, 20, 147),   # mocny różowy
+    (220, 222, 223),  # standardowy szary potwór
+    (200, 200, 200),  # lekko ciemniejszy szary
+    (240, 240, 240),  # lekko jaśniejszy szary
 ]
-COLOR_TOLERANCE = 60 # Zwiększona tolerancja, by złapać różne odcienie i cienie
+COLOR_TOLERANCE = 30 # Węższa tolerancja, by uniknąć różowego błędu
+
+# Fallback: jeśli nie ma mobów, klikamy wybrane przejście na ekranie.
+PASSAGE_FALLBACK_ENABLED = True
+PASSAGE_COORD = (2380, 583)  # Zmień na współrzędne przejścia/wyjścia w Twoim interfejsie
+PASSAGE_WAIT_MIN = 1.5
+PASSAGE_WAIT_MAX = 3.0
 
 # Konfiguracja wykrywania walki:
 # Podaj koordynaty X, Y miejsca na ekranie, które jest widoczne TYLKO podczas walki.
@@ -138,6 +143,13 @@ def main():
             # 4. Anty-Ban: Losowe opóźnienie (od 1.5 do 3 sekund) na dojście do potwora
             delay = random.uniform(1.5, 3.0)
             print(f"[Czekam] Oczekuję {delay:.2f} s na dojście do celu...")
+            time.sleep(delay)
+        elif PASSAGE_FALLBACK_ENABLED:
+            print("[Fallback] Nie ma mobów, idę do przejścia...")
+            pyautogui.moveTo(PASSAGE_COORD[0], PASSAGE_COORD[1], duration=random.uniform(0.1, 0.3))
+            pyautogui.click()
+            delay = random.uniform(PASSAGE_WAIT_MIN, PASSAGE_WAIT_MAX)
+            print(f"[Czekam] Oczekuję {delay:.2f} s po kliknięciu przejścia...")
             time.sleep(delay)
         else:
             # Jeśli nie znaleziono żadnych mobów, czekamy chwilę by nie obciążać procesora
