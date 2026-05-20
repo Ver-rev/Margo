@@ -311,6 +311,13 @@
         title.style.marginBottom = '8px';
         container.appendChild(title);
 
+        const versionInfo = document.createElement('div');
+        versionInfo.innerText = 'Wersja 2.5';
+        versionInfo.style.fontSize = '11px';
+        versionInfo.style.opacity = '0.7';
+        versionInfo.style.marginBottom = '8px';
+        container.appendChild(versionInfo);
+
         const startBtn = document.createElement('button');
         startBtn.innerText = 'START';
         startBtn.style.marginRight = '8px';
@@ -337,6 +344,7 @@
 
         const logBtn = document.createElement('button');
         logBtn.innerText = 'LOGI';
+        logBtn.style.marginRight = '8px';
         logBtn.style.padding = '6px 10px';
         logBtn.style.border = 'none';
         logBtn.style.borderRadius = '5px';
@@ -345,6 +353,20 @@
         logBtn.style.color = '#fff';
         logBtn.onclick = showLogModal;
         container.appendChild(logBtn);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.innerText = 'KOPIUJ LOGI';
+        copyBtn.style.padding = '6px 10px';
+        copyBtn.style.border = 'none';
+        copyBtn.style.borderRadius = '5px';
+        copyBtn.style.cursor = 'pointer';
+        copyBtn.style.background = '#17a2b8';
+        copyBtn.style.color = '#fff';
+        copyBtn.onclick = () => {
+            const text = LOG_BUFFER.map(e => `[${e.time}] ${e.level}: ${e.text}`).join('\n');
+            navigator.clipboard.writeText(text).then(() => addLog('INFO', 'Logi skopiowane do schowka')).catch(() => addLog('ERROR', 'Nie udało się skopiować logów'));
+        };
+        container.appendChild(copyBtn);
 
         document.body.appendChild(container);
     }
