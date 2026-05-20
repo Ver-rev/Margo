@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Margonem NI - Fresh Engine Bot v4.3
+// @name         Margonem NI - Fresh Engine Bot v4.5 (Z logami)
 // @namespace    http://tampermonkey.net/
-// @version      4.3
-// @description  Bot poruszający się za pomocą emulacji klawiatury (W,A,S,D) - ominięcie blokad NI
+// @version      4.5
+// @description  Czyste podchodzenie do potworów z zaawansowanym systemem debugowania.
 // @author       Ver
 // @match        https://*.margonem.pl/*
-// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=4.3
-// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=4.3
+// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=4.5
+// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=4.5
 // @grant        none
 // ==/UserScript==
 
@@ -14,45 +14,35 @@
     'use strict';
 
     const BOT_CONFIG = {
-        intervalMs: 300,           // Szybki interwał sprawdzania i kroków
-        isRunning: false,          
+        intervalMs: 800,           
+        isRunning: false,
+        debugMode: true            // Włączone logi debugowania
     };
 
-    console.log("[Bot 4.3] Załadowany. Emulacja klawiatury sprzętowej aktywna.");
+    console.log("[Bot 4.5] Załadowany. Tryb wędrówki z DEBUGOWANIEM aktywny.");
+
+    // --- SYSTEM LOGÓW ---
+    function botLog(action, details = "") {
+        if (!BOT_CONFIG.debugMode) return;
+        const time = new Date().toLocaleTimeString();
+        console.log(`[BOT-DEBUG ${time}] ${action} ${details ? '| ' + details : ''}`);
+    }
+
+    function botError(action, errorDetail = "") {
+        const time = new Date().toLocaleTimeString();
+        console.error(`[BOT-ERROR ${time}] ${action} | ${errorDetail}`);
+    }
+    // --------------------
 
     function getDistance(x1, y1, x2, y2) {
         return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2));
     }
 
-    // 1. SYSTEM EMULACJI KLIKNIĘĆ KLAWIATURY (Gra widzi to jako fizyczny przycisk)
-    function simulateKey(keyCode, keyName) {
-        const documentElement = document.documentElement;
-        
-        const downEvent = new KeyboardEvent('keydown', {
-            bubbles: true,
-            cancelable: true,
-            keyCode: keyCode,
-            key: keyName,
-            code: keyName,
-            which: keyCode
-        });
-        
-        const upEvent = new KeyboardEvent('keyup', {
-            bubbles: true,
-            cancelable: true,
-            keyCode: keyCode,
-            key: keyName,
-            code: keyName,
-            which: keyCode
-        });
-
-        documentElement.dispatchEvent(downEvent);
-        setTimeout(() => { documentElement.dispatchEvent(upEvent); }, 50);
-    }
-
-    // 2. WYSZUKIWANIU ZWYKŁYCH POTWORÓW
     function findNearestMonster() {
-        if (!window.Engine || !window.Engine.npcs || !window.Engine.hero) return null;
+        if (!window.Engine || !window.Engine.npcs || !window.Engine.hero) {
+            botError("Brak silnika gry", "Engine, Engine.npcs lub Engine.hero jest niedostępne.");
+            return null;
+        }
 
         const npcs = window.Engine.npcs.check();
         const npcList = Array.isArray(npcs) ? npcs : Object.values(npcs);
@@ -79,51 +69,46 @@
         return nearestNpc;
     }
 
-    // 3. STEROWANIE SZYBKOŚCIĄ I KIERUNKIEM RUCHU
-    function moveTowardsWithKeyboard(targetX, targetY) {
+    function isHeroMoving() {
         const hero = window.Engine.hero;
-        if (!hero || !hero.d) return;
+        if (!hero) return false;
+        
+        let movingReason = "";
+        let isMoving = false;
 
-        const heroX = hero.d.x;
-        const heroY = hero.d.y;
+        if (hero.path && hero.path.length > 0) {
+            isMoving = true;
+            movingReason = `path.length=${hero.path.length}`;
+        } else if (hero.moving) {
+            isMoving = true;
+            movingReason = "hero.moving=true";
+        } else if (hero.d && hero.d.moving) {
+            isMoving = true;
+            movingReason = "hero.d.moving=true";
+        }
+        
+        if (isMoving && BOT_CONFIG.debugMode) {
+            // Logujemy powód ruchu, żeby wiedzieć czemu bot czeka
+            // (Zakomentowane botLog tutaj, żeby nie spamować co 800ms, gdy postać idzie długą trasą)
+        }
 
-        // Idź w prawo (KeyD / Strzałka w prawo)
-        if (heroX < targetX) {
-            simulateKey(68, 'KeyD');
-            return;
-        }
-        // Idź w lewo (KeyA / Strzałka w lewo)
-        if (heroX > targetX) {
-            simulateKey(65, 'KeyA');
-            return;
-        }
-        // Idź w dół (KeyS / Strzałka w dół)
-        if (heroY < targetY) {
-            simulateKey(83, 'KeyS');
-            return;
-        }
-        // Idź w górę (KeyW / Strzałka w górę)
-        if (heroY > targetY) {
-            simulateKey(87, 'KeyW');
-            return;
-        }
+        return isMoving;
     }
 
-    // 4. GŁÓWNA LOGIKA
     function botTick() {
         if (!BOT_CONFIG.isRunning) return;
+        
         const engine = window.Engine;
         if (!engine || !engine.hero) return;
 
-        // Auto-zamykanie szybkiej walki
         if (engine.battle && engine.battle.show) {
-            const fastFightBtn = document.querySelector('.fast-fight-button, [data-key="f"], .btn-szybka');
-            if (fastFightBtn) fastFightBtn.click();
+            botLog("STATUS", "Wykryto okno walki. Bot pauzuje i czeka na autofight.");
             return;
         }
 
-        // Jeśli postać fizycznie się porusza, nie klikaj kolejnego klawisza
-        if (engine.hero.moving) return;
+        if (isHeroMoving()) {
+            return; // Czekamy aż postać się zatrzyma
+        }
 
         const target = findNearestMonster();
 
@@ -132,62 +117,15 @@
             const heroY = engine.hero.d.y;
             const dist = getDistance(heroX, heroY, target.x, target.y);
 
-            // Jesteśmy przy potworze -> Atak przez paczkę sieciową (to działało!)
-            if (dist <= 1) {
-                console.log(`[Bot 4.3] Atakuję: ${target.name}`);
-                if (window._g) {
-                    window._g('fight&id=' + target.id);
+            if (dist > 1) {
+                botLog("RUCH", `Wysyłam autoGoTo do: ${target.name} (ID: ${target.id}) na [${target.x}, ${target.y}]. Dystans: ${dist}. Moja pozycja: [${heroX}, ${heroY}]`);
+                if (typeof engine.hero.autoGoTo === 'function') {
+                    try {
+                        engine.hero.autoGoTo({ x: target.x, y: target.y });
+                    } catch (err) {
+                        botError("Błąd autoGoTo", err.message);
+                    }
+                } else {
+                    botError("Brak funkcji", "engine.hero.autoGoTo nie istnieje!");
                 }
-                return;
-            }
-
-            // Jesteśmy dalej -> "wciskamy" klawisz kierunkowy
-            moveTowardsWithKeyboard(target.x, target.y);
-        }
-    }
-
-    // 5. PANEL UI
-    function createBotUI() {
-        if (document.getElementById('margo-bot-v3-btn')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'margo-bot-v3-btn';
-        btn.innerText = 'BOT: OFF';
-        btn.style.position = 'fixed';
-        btn.style.bottom = '70px'; 
-        btn.style.right = '20px';
-        btn.style.zIndex = '99999';
-        btn.style.padding = '12px 20px';
-        btn.style.backgroundColor = '#dc3545';
-        btn.style.color = 'white';
-        btn.style.border = '2px solid #333';
-        btn.style.borderRadius = '8px';
-        btn.style.cursor = 'pointer';
-        btn.style.fontWeight = 'bold';
-
-        btn.onclick = function() {
-            BOT_CONFIG.isRunning = !BOT_CONFIG.isRunning;
-            if (BOT_CONFIG.isRunning) {
-                btn.innerText = 'BOT: ON';
-                btn.style.backgroundColor = '#28a745';
-                console.log("[Bot 4.3] Start.");
             } else {
-                btn.innerText = 'BOT: OFF';
-                btn.style.backgroundColor = '#dc3545';
-                console.log("[Bot 4.3] Stop.");
-            }
-        };
-
-        document.body.appendChild(btn);
-    }
-
-    if (document.readyState === 'complete') {
-        setTimeout(createBotUI, 2000);
-        setInterval(botTick, BOT_CONFIG.intervalMs);
-    } else {
-        window.addEventListener('load', () => {
-            setTimeout(createBotUI, 2000);
-            setInterval(botTick, BOT_CONFIG.intervalMs);
-        });
-    }
-})();
