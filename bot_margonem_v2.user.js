@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -19,6 +19,8 @@
         maxLevelDiff: 30,
         minLevelDiff: 5,
         enableTreeFallback: true,
+        enableRandomFallback: true,
+        randomFallbackRange: 8,
         passageTypes: [7],
         enablePassageDebug: false
     };
@@ -177,6 +179,23 @@
         return nearest;
     }
 
+    function getRandomNearbyPoint() {
+        const engine = getEngine();
+        if (!engine || !engine.hero) return null;
+        const heroX = engine.hero.d.x;
+        const heroY = engine.hero.d.y;
+        const range = CONFIG.randomFallbackRange;
+        const offsetX = Math.floor(Math.random() * (range * 2 + 1)) - range;
+        const offsetY = Math.floor(Math.random() * (range * 2 + 1)) - range;
+        const destX = heroX + offsetX;
+        const destY = heroY + offsetY;
+        if (destX === heroX && destY === heroY) {
+            if (offsetX === range) return { x: heroX - range, y: heroY };
+            return { x: heroX + range, y: heroY };
+        }
+        return { x: destX, y: destY };
+    }
+
     function walkTo(x, y) {
         const engine = getEngine();
         if (!engine || !engine.hero) return false;
@@ -238,7 +257,15 @@
                 const tree = getNearestTree();
                 if (tree) {
                     addLog('INFO', 'Brak potworów, idę do drzewa', tree.d.id, tree.d.x, tree.d.y);
-                    walkTo(tree.d.x, tree.d.y);
+                    if (walkTo(tree.d.x, tree.d.y)) return;
+                }
+            }
+
+            if (CONFIG.enableRandomFallback) {
+                const point = getRandomNearbyPoint();
+                if (point) {
+                    addLog('INFO', 'Brak celów, idę losowo', point.x, point.y);
+                    walkTo(point.x, point.y);
                 }
             }
         } catch (error) {
