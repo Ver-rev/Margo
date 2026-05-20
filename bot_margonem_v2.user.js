@@ -25,6 +25,7 @@
         enablePassageDebug: false
     };
 
+    const SCRIPT_VERSION = '2.7';
     const LOG_BUFFER = [];
     const LOG_MAX = 300;
 
@@ -38,6 +39,8 @@
         if (LOG_BUFFER.length > LOG_MAX) LOG_BUFFER.shift();
         console.log(`[ExpBot][${level}] ${text}`);
     }
+
+    addLog('INFO', `ExpBot loaded v${SCRIPT_VERSION}`);
 
     function showLogModal() {
         const existing = document.getElementById('expbot-log-modal');
@@ -315,7 +318,7 @@
         container.appendChild(title);
 
         const versionInfo = document.createElement('div');
-        versionInfo.innerText = 'Wersja 2.5';
+        versionInfo.innerText = `Wersja ${SCRIPT_VERSION}`;
         versionInfo.style.fontSize = '11px';
         versionInfo.style.opacity = '0.7';
         versionInfo.style.marginBottom = '8px';
