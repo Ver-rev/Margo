@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Margonem NI - Fresh Engine Bot v3.7
+// @name         Margonem NI - Fresh Engine Bot v3.8
 // @namespace    http://tampermonkey.net/
-// @version      3.7
-// @description  W pełni stabilny bot oparty na bezpośrednich funkcjach ruchu silnika NI
+// @version      3.8
+// @description  Ominięcie startBlockade za pomocą natywnego zdarzenia wejścia w interakcję
 // @author       Ver
 // @match        https://*.margonem.pl/*
-// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.7
-// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.7
+// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.8
+// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.8
 // @grant        none
 // ==/UserScript==
 
@@ -14,13 +14,13 @@
     'use strict';
 
     const BOT_CONFIG = {
-        intervalMs: 1000,          // Sprawdzanie sytuacji co 1 sekundę
+        intervalMs: 1200,          // Bezpieczny interwał sprawdzania
         isRunning: false,          
     };
 
-    console.log("[Bot 3.7] Załadowany. Autorskie sterowanie ruchem NI aktywne.");
+    console.log("[Bot 3.8] Załadowany. Silnik interakcji bezblokadowej aktywne.");
 
-    // 1. ANATOMIA POSZUKIWANIA CELU
+    // 1. SZUKANIE NAJBLIŻSZEGO POTWORA (W oparciu o czysty silnik NI)
     function findNearestMonster() {
         if (!window.Engine || !window.Engine.npc || !window.Engine.hero) return null;
 
@@ -34,61 +34,58 @@
         for (let id in npcList) {
             const npc = npcList[id];
 
-            // Typ 1 (zwykły), 2 (agresywny), 3 (elita), 4 (heros/e2)
             if (npc.d && (npc.d.type === 1 || npc.d.type === 2 || npc.d.type === 3 || npc.d.type === 4)) {
-                
-                // Pomijaj martwe potwory
                 if (npc.d.del || (typeof npc.d.wt !== 'undefined' && npc.d.wt === 0)) continue; 
 
-                // Odległość Manhattan
                 const distance = Math.abs(npc.d.x - heroX) + Math.abs(npc.d.y - heroY);
 
                 if (distance < minDistance) {
                     minDistance = distance;
-                    nearestNpc = npc.d; // Zwracamy czyste dane potwora
+                    nearestNpc = npc; // Zwracamy pełny obiekt silnika NPC, nie tylko dane .d
                 }
             }
         }
         return nearestNpc;
     }
 
-    // 2. REAKCJA I WYKONANIE RUCHU
+    // 2. GŁÓWNA LOGIKA WYKONYWANIA AKCJI
     function botTick() {
         if (!BOT_CONFIG.isRunning) return;
 
-        // Blokady: walka, śmierć, otwarty dialog
+        // Jeśli trwa walka, dialog, lub postać nie żyje - stój
         if (!window.Engine || window.Engine.battle || (window.Engine.hero && window.Engine.hero.d.dead) || document.getElementById('dialogview')) {
             return;
         }
 
-        // Blokada jeśli postać aktualnie idzie – pozwólmy jej dobiec do celu
+        // Jeśli postać już biegnie, czekaj
         if (window.Engine.hero && window.Engine.hero.isMoving) return;
 
-        const target = findNearestMonster();
+        const targetObj = findNearestMonster();
 
-        if (target) {
-            console.log(`[Bot 3.7] Cel: ${target.name} (ID: ${target.id}) na pozycjach [${target.x}, ${target.y}]`);
+        if (targetObj && targetObj.d) {
+            const target = targetObj.d;
+            console.log(`[Bot 3.8] Namierzono: ${target.name} (ID: ${target.id}) na [${target.x}, ${target.y}]`);
 
-            // WYKONANIE AKCJI:
-            // Krok A: Wydajemy silnikowi rozkaz pójścia na koordynaty potwora
-            if (window.Engine.hero && typeof window.Engine.hero.moveTo === "function") {
-                window.Engine.hero.moveTo(target.x, target.y);
+            // METODA SPRAWDZONA: Emulacja wywołania interakcji przez menedżer interfejsu (Omija startBlockade)
+            if (window.Engine.allight && window.Engine.allight.clickNpc) {
+                // Wywołujemy natywną dla silnika funkcję kliknięcia w NPC
+                window.Engine.allight.clickNpc(target.id);
+            } 
+            // METODA REZERWOWA: Jeśli gra zmieniła strukturę obiektów, uderzamy w standardowy Interface Manager
+            else if (window.Engine.interface && window.Engine.interface.action) {
+                window.Engine.interface.action("talk", { id: target.id });
             }
-
-            // Krok B: Wysyłamy pakiet rozpoczęcia rozmowy/ataku bezpośrednio przez serwer gry
-            if (window.Engine.communication && window.Engine.communication.send) {
-                // Dokładnie to wysyła gra po podejsciu do NPC
+            // METODA TRZECIEGO STOPNIA: Bezpośrednie wysłanie żądania interakcji bez wywoływania ruchu z poziomu JS
+            else if (window.Engine.communication && window.Engine.communication.send) {
                 window.Engine.communication.send(`talk&id=${target.id}`);
-            } else if (window._g) {
-                window._g("talk", { id: target.id });
             }
 
         } else {
-            console.log("[Bot 3.7] Szukam przeciwników...");
+            console.log("[Bot 3.8] Szukam celów...");
         }
     }
 
-    // 3. WIZUALNY PANEL KONTROLNY
+    // 3. PANEL UI
     function createBotUI() {
         if (document.getElementById('margo-bot-v3-btn')) return;
 
@@ -113,11 +110,11 @@
             if (BOT_CONFIG.isRunning) {
                 btn.innerText = 'BOT: ON';
                 btn.style.backgroundColor = '#28a745';
-                console.log("[Bot 3.7] Włączony.");
+                console.log("[Bot 3.8] Uruchomiony.");
             } else {
                 btn.innerText = 'BOT: OFF';
                 btn.style.backgroundColor = '#dc3545';
-                console.log("[Bot 3.7] Wyłączony.");
+                console.log("[Bot 3.8] Zatrzymany.");
             }
         };
 
