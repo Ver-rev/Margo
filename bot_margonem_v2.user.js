@@ -28,6 +28,8 @@
     const SCRIPT_VERSION = '2.8';
     const LOG_BUFFER = [];
     const LOG_MAX = 300;
+    let CURRENT_TARGET_ID = null;
+    let lastWalkCommandAt = 0;
 
     function addLog(level, ...args) {
         const time = new Date().toISOString();
@@ -269,16 +271,31 @@
                 return;
             }
 
+            if (Date.now() - lastWalkCommandAt < CONFIG.intervalMs) {
+                addLog('DEBUG', 'Oczekiwanie na rozpoczęcie ruchu od ostatniego polecenia');
+                return;
+            }
+
             // Pomijamy przejścia, by bot nie podchodził do roślin i fałszywych obiektów.
             const target = getNearestMonster();
             if (target) {
                 const heroX = engine.hero.d.x;
                 const heroY = engine.hero.d.y;
                 const dist = getDistance(heroX, heroY, target.d.x, target.d.y);
-                addLog('INFO', 'Idę do potwora', target.d.id, 'lvl', target.d.lvl, 'pos', target.d.x, target.d.y, 'dist', dist);
-                if (walkTo(target.d.x, target.d.y)) return;
+                const targetId = target.d.id;
+                addLog('INFO', 'Idę do potwora', targetId, 'lvl', target.d.lvl, 'pos', target.d.x, target.d.y, 'dist', dist);
+                if (CURRENT_TARGET_ID === targetId && Date.now() - lastWalkCommandAt < CONFIG.intervalMs * 2) {
+                    addLog('DEBUG', 'Trzymam ten sam cel, czekam na ruch', targetId);
+                    return;
+                }
+                CURRENT_TARGET_ID = targetId;
+                if (walkTo(target.d.x, target.d.y)) {
+                    lastWalkCommandAt = Date.now();
+                    return;
+                }
                 addLog('WARN', 'Nie udało się ruszyć do potwora');
             } else {
+                CURRENT_TARGET_ID = null;
                 const allCount = getNpcList().filter(isMonster).length;
                 addLog('DEBUG', 'Brak potwora zgodnego z kryteriami', 'wszystkich potworów', allCount);
             }
