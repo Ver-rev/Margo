@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.9
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -25,7 +25,7 @@
         enablePassageDebug: true
     };
 
-    const SCRIPT_VERSION = '2.8';
+    const SCRIPT_VERSION = '2.9';
     const LOG_BUFFER = [];
     const LOG_MAX = 300;
     let CURRENT_TARGET_ID = null;
@@ -245,6 +245,41 @@
         return false;
     }
 
+    // =============================================
+    // ATAK – inicjowanie walki z potworem
+    // =============================================
+    function attackMonster(npc) {
+        if (!npc || !npc.d) return false;
+        const npcId = npc.d.id;
+        addLog('INFO', '⚔️ Atakuję potwora', npcId, 'lvl', npc.d.lvl, 'pos', npc.d.x, npc.d.y);
+
+        // Metoda 1: _g("fight&id=...") – najczęstsza w Margonem
+        if (typeof window._g === 'function') {
+            addLog('DEBUG', 'Atak metodą _g fight', npcId);
+            window._g('fight&id=' + npcId);
+            return true;
+        }
+
+        // Metoda 2: Kliknięcie elementu NPC w DOM
+        const npcEl = document.querySelector(`#npc${npcId}, [data-id="${npcId}"], .npc-${npcId}`);
+        if (npcEl) {
+            addLog('DEBUG', 'Atak metodą kliknięcia DOM', npcId);
+            npcEl.click();
+            return true;
+        }
+
+        // Metoda 3: autoGoTo z obiektem NPC (nie współrzędnymi)
+        const engine = getEngine();
+        if (engine && engine.hero && typeof engine.hero.autoGoTo === 'function') {
+            addLog('DEBUG', 'Atak metodą autoGoTo(npc)', npcId);
+            engine.hero.autoGoTo(npc);
+            return true;
+        }
+
+        addLog('WARN', 'Nie udało się zaatakować potwora', npcId);
+        return false;
+    }
+
     function clickFastFight() {
         const button = document.querySelector('.fast-fight-button, [data-key="f"], .btn-szybka');
         if (button) {
@@ -276,14 +311,26 @@
                 return;
             }
 
-            // Pomijamy przejścia, by bot nie podchodził do roślin i fałszywych obiektów.
+            // Szukam najbliższego potwora i ATAKUJĘ gdy jestem blisko
             const target = getNearestMonster();
             if (target) {
                 const heroX = engine.hero.d.x;
                 const heroY = engine.hero.d.y;
                 const dist = getDistance(heroX, heroY, target.d.x, target.d.y);
                 const targetId = target.d.id;
-                addLog('INFO', 'Idę do potwora', targetId, 'lvl', target.d.lvl, 'pos', target.d.x, target.d.y, 'dist', dist);
+                addLog('INFO', 'Cel:', targetId, 'lvl', target.d.lvl, 'pos', target.d.x, target.d.y, 'dist', dist);
+
+                // ★ KLUCZOWA ZMIANA: Gdy blisko (dist <= 1) → ATAKUJ!
+                if (dist <= 1) {
+                    addLog('INFO', '🎯 Jestem przy potworze – ATAKUJĘ!', targetId);
+                    if (attackMonster(target)) {
+                        lastWalkCommandAt = Date.now();
+                        CURRENT_TARGET_ID = null; // reset celu po ataku
+                        return;
+                    }
+                }
+
+                // Daleko → idź do potwora
                 if (CURRENT_TARGET_ID === targetId && Date.now() - lastWalkCommandAt < CONFIG.intervalMs * 2) {
                     addLog('DEBUG', 'Trzymam ten sam cel, czekam na ruch', targetId);
                     return;
