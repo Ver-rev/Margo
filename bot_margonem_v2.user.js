@@ -1,10 +1,10 @@
-// ==UserScript==
-// @name         Margonem NI - Auto Exp Bot (Zaawansowany)
+﻿// ==UserScript==
+// @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Prawdziwy bot expiący do Margonem (Nowy Interfejs) działający na silniku gry (Engine).
+// @version      2.2
+// @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
-// @match        https://*.margonem.pl/
+// @match        https://*.margonem.pl/*
 // @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v2.user.js
 // @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v2.user.js
 // @grant        none
@@ -13,40 +13,34 @@
 (function() {
     'use strict';
 
-    // --------------------
-    // 0️⃣  GLOBAL LOG BUFFER
-    // --------------------
+    const CONFIG = {
+        intervalMs: 1200,
+        isRunning: false,
+        maxLevelDiff: 30,
+        minLevelDiff: 5,
+        enableTreeFallback: true,
+        passageTypes: [7],
+        enablePassageDebug: false
+    };
+
     const LOG_BUFFER = [];
-    const LOG_MAX = 500; // keep last 500 entries
-    // Helper to store a log entry with timestamp and level
-    function addLog(level, args) {
+    const LOG_MAX = 300;
+
+    function addLog(level, ...args) {
         const time = new Date().toISOString();
-        const msg = args.map(a => {
-            try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
-            catch { return String(a); }
+        const text = args.map(v => {
+            try { return typeof v === 'object' ? JSON.stringify(v) : String(v); }
+            catch { return String(v); }
         }).join(' ');
-        LOG_BUFFER.push({time, level, msg});
+        LOG_BUFFER.push({ time, level, text });
         if (LOG_BUFFER.length > LOG_MAX) LOG_BUFFER.shift();
+        console.log(`[ExpBot][${level}] ${text}`);
     }
-    // Preserve original console methods
-    const origLog = console.log;
-    const origWarn = console.warn;
-    const origError = console.error;
-    console.log = function(...args) { addLog('LOG', args); origLog.apply(console, args); };
-    console.warn = function(...args) { addLog('WARN', args); origWarn.apply(console, args); };
-    console.error = function(...args) { addLog('ERROR', args); origError.apply(console, args); };
-    // Capture uncaught errors and promise rejections
-    window.addEventListener('error', function(e) {
-        addLog('UNCAUGHT_ERROR', [e.message, 'at', e.filename + ':' + e.lineno]);
-    });
-    window.addEventListener('unhandledrejection', function(e) {
-        addLog('UNHANDLED_REJECTION', [e.reason]);
-    });
-    // Function to display logs in a simple modal
+
     function showLogModal() {
-        // Remove existing modal if any
-        const old = document.getElementById('expbot-log-modal');
-        if (old) old.remove();
+        const existing = document.getElementById('expbot-log-modal');
+        if (existing) existing.remove();
+
         const modal = document.createElement('div');
         modal.id = 'expbot-log-modal';
         modal.style.position = 'fixed';
@@ -56,413 +50,280 @@
         modal.style.width = '80%';
         modal.style.maxHeight = '70%';
         modal.style.overflowY = 'auto';
-        modal.style.background = 'rgba(0,0,0,0.9)';
+        modal.style.background = 'rgba(0,0,0,0.92)';
         modal.style.color = '#fff';
-        modal.style.padding = '15px';
-        modal.style.border = '2px solid #ff4444';
-        modal.style.borderRadius = '5px';
+        modal.style.padding = '14px';
+        modal.style.border = '2px solid #ffa500';
+        modal.style.borderRadius = '8px';
         modal.style.zIndex = '1000000';
         modal.style.fontFamily = 'monospace';
-        // Close button
+        modal.style.whiteSpace = 'pre-wrap';
+
         const closeBtn = document.createElement('button');
         closeBtn.innerText = '✖';
         closeBtn.style.position = 'absolute';
-        closeBtn.style.top = '5px';
-        closeBtn.style.right = '5px';
+        closeBtn.style.top = '8px';
+        closeBtn.style.right = '8px';
         closeBtn.style.background = '#ff4444';
-        closeBtn.style.color = '#fff';
+        closeBtn.style.color = 'white';
         closeBtn.style.border = 'none';
-        closeBtn.style.borderRadius = '3px';
+        closeBtn.style.borderRadius = '4px';
         closeBtn.style.cursor = 'pointer';
         closeBtn.onclick = () => modal.remove();
+
+        const title = document.createElement('div');
+        title.innerText = 'ExpBot logi';
+        title.style.marginBottom = '10px';
+        title.style.fontWeight = 'bold';
+
+        const content = document.createElement('div');
+        content.textContent = LOG_BUFFER.map(e => `[${e.time}] ${e.level}: ${e.text}`).join('\n') || 'Brak logów.';
+
         modal.appendChild(closeBtn);
-        // Build log text
-        const pre = document.createElement('pre');
-        pre.style.whiteSpace = 'pre-wrap';
-        const lines = LOG_BUFFER.map(e => `[${e.time}] ${e.level}: ${e.msg}`).join('\n');
-        pre.textContent = lines || 'Brak logów.';
-        modal.appendChild(pre);
+        modal.appendChild(title);
+        modal.appendChild(content);
         document.body.appendChild(modal);
     }
-    
-const CONFIG = {
-    intervalMs: 800, // How often to check actions (ms)
-    isRunning: false,
-    maxLevelDiff: 30, // Max level difference above hero (ignore stronger monsters)
-    minLevelDiff: 5,  // Min level difference below hero (ignore too weak monsters)
-    enablePuzzles: true, // Toggle for puzzle handling
-    enableTreeFallback: true, // When no monsters, walk to nearest tree
-    enablePassageDebug: false // When true, logs nearby NPCs to help identify passage type
-};
 
+    function getEngine() {
+        return window.Engine || null;
+    }
 
-    let botInterval = null;
-
-    // Oblicza odległość w kratkach między (x1, y1) a (x2, y2)
     function getDistance(x1, y1, x2, y2) {
         return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2));
     }
 
-    // Wyszukuje najbliższego potwora z użyciem wbudowanego Engine gry
+    function getNpcList() {
+        const engine = getEngine();
+        if (!engine || !engine.npcs) return [];
+        const npcs = engine.npcs.check();
+        return Array.isArray(npcs) ? npcs : Object.values(npcs);
+    }
+
+    function isMonster(npc) {
+        return npc?.d && (npc.d.type === 2 || npc.d.type === 3);
+    }
+
     function getNearestMonster() {
-        if (!window.Engine || !window.Engine.npcs || !window.Engine.hero) return null;
-        
-        let npcs = window.Engine.npcs.check(); // Pobiera obiekt/tablicę wszystkich NPC na mapie
-        let monsters = [];
+        const engine = getEngine();
+        if (!engine || !engine.hero) return null;
 
-        // Przekształcamy na tablicę (zależnie od tego jak Engine to zwraca)
-        let npcList = Array.isArray(npcs) ? npcs : Object.values(npcs);
+        const heroX = engine.hero.d.x;
+        const heroY = engine.hero.d.y;
+        const heroLvl = engine.hero.d.lvl || 0;
+        const candidates = getNpcList().filter(npc => {
+            if (!isMonster(npc)) return false;
+            const lvl = npc.d.lvl || 0;
+            if (lvl > heroLvl + CONFIG.maxLevelDiff) return false;
+            if (lvl < heroLvl - CONFIG.minLevelDiff) return false;
+            return true;
+        });
 
-        let heroX = window.Engine.hero.d.x;
-        let heroY = window.Engine.hero.d.y;
-        let heroLvl = window.Engine.hero.d.lvl;
-
-        for (let npc of npcList) {
-            if (!npc || !npc.d) continue;
-
-            // W Margonem type 2 i 3 to potwory/NPC z możliwością walki
-            if (npc.d.type === 2 || npc.d.type === 3) {
-                
-                // Jeśli potwór ma level wyższy od naszego dopuszczalnego limitu, pomijamy go
-                let npcLvl = npc.d.lvl || 0;
-                // Skip monsters that are too high level
-                if (npcLvl > heroLvl + CONFIG.maxLevelDiff) continue;
-                // Skip monsters that are significantly lower level
-                if (npcLvl < heroLvl - CONFIG.minLevelDiff) continue;
-
-                monsters.push(npc);
+        let nearest = null;
+        let best = Infinity;
+        for (const npc of candidates) {
+            const dist = getDistance(heroX, heroY, npc.d.x, npc.d.y);
+            if (dist < best) {
+                best = dist;
+                nearest = npc;
             }
         }
+        return nearest;
+    }
 
-        if (monsters.length === 0) return null;
+    function isPassageNpc(npc) {
+        return npc?.d && CONFIG.passageTypes.includes(npc.d.type);
+    }
 
-        // Znajdź najbliższego potwora
+    function getNearestPassage() {
+        const engine = getEngine();
+        if (!engine || !engine.hero) return null;
+
+        const heroX = engine.hero.d.x;
+        const heroY = engine.hero.d.y;
         let nearest = null;
-        let minD = Infinity;
+        let best = Infinity;
 
-        for (let m of monsters) {
-            let d = getDistance(heroX, heroY, m.d.x, m.d.y);
-            if (d < minD) {
-                minD = d;
-                nearest = m;
+        for (const npc of getNpcList()) {
+            if (!isPassageNpc(npc)) continue;
+            const dist = getDistance(heroX, heroY, npc.d.x, npc.d.y);
+            if (dist < best) {
+                best = dist;
+                nearest = npc;
             }
         }
 
         return nearest;
     }
 
-// --- Passage detection utilities ---
-function isPassageNpc(npc) {
-    // Placeholder: type 7 is commonly used for blue portals in many versions.
-    // If passages are not detected, enable `enablePassageDebug` to log nearby NPCs and their `type`.
-    return npc.d && (npc.d.type === 7);
-}
+    function getNearestTree() {
+        const engine = getEngine();
+        if (!engine || !engine.hero) return null;
 
-function getNearestPassage() {
-    if (!window.Engine || !window.Engine.npcs) return null;
-    const npcs = window.Engine.npcs.check();
-    const heroX = window.Engine.hero.d.x;
-    const heroY = window.Engine.hero.d.y;
-    const npcList = Array.isArray(npcs) ? npcs : Object.values(npcs);
-    let nearest = null;
-    let minD = Infinity;
-    for (const npc of npcList) {
-        if (!npc?.d) continue;
-        if (isPassageNpc(npc)) {
-            const d = getDistance(heroX, heroY, npc.d.x, npc.d.y);
-            if (d < minD) { minD = d; nearest = npc; }
+        const heroX = engine.hero.d.x;
+        const heroY = engine.hero.d.y;
+        let nearest = null;
+        let best = Infinity;
+
+        for (const npc of getNpcList()) {
+            if (!npc?.d || npc.d.type !== 4) continue;
+            const dist = getDistance(heroX, heroY, npc.d.x, npc.d.y);
+            if (dist < best) {
+                best = dist;
+                nearest = npc;
+            }
         }
-    }
-    return nearest;
-}
 
-// Debug helper – logs NPCs within a radius (default 10 tiles)
-function debugNearbyNPCs(radius = 10) {
-    if (!CONFIG.enablePassageDebug) return;
-    if (!window.Engine || !window.Engine.npcs) return;
-    const npcs = window.Engine.npcs.check();
-    const heroX = window.Engine.hero.d.x;
-    const heroY = window.Engine.hero.d.y;
-    const list = Array.isArray(npcs) ? npcs : Object.values(npcs);
-    const nearby = [];
-    for (const npc of list) {
-        if (!npc?.d) continue;
-        const d = getDistance(heroX, heroY, npc.d.x, npc.d.y);
-        if (d <= radius) nearby.push({id: npc.d.id, type: npc.d.type, name: npc.d.name, dist: d});
+        return nearest;
     }
-    console.log('[ExpBot][Debug] Nearby NPCs (≤' + radius + '):', nearby);
-}
 
-// --- Tree detection (fallback) ---
-function getNearestTree() {
-    if (!window.Engine || !window.Engine.npcs) return null;
-    const npcs = window.Engine.npcs.check();
-    const heroX = window.Engine.hero.d.x;
-    const heroY = window.Engine.hero.d.y;
-    const list = Array.isArray(npcs) ? npcs : Object.values(npcs);
-    let nearest = null;
-    let minD = Infinity;
-    for (const npc of list) {
-        if (!npc?.d) continue;
-        if (npc.d.type === 4) {
-            const d = getDistance(heroX, heroY, npc.d.x, npc.d.y);
-            if (d < minD) { minD = d; nearest = npc; }
+    function walkTo(x, y) {
+        const engine = getEngine();
+        if (!engine || !engine.hero) return false;
+
+        if (typeof engine.hero.autoGoTo === 'function') {
+            engine.hero.autoGoTo({ x, y });
+            return true;
         }
+        if (typeof engine.hero.goTo === 'function') {
+            engine.hero.goTo(x, y);
+            return true;
+        }
+        if (typeof window._g === 'function') {
+            window._g(`walk=${x},${y}`);
+            return true;
+        }
+        return false;
     }
-    return nearest;
-}
-    // Główna pętla bota
+
+    function clickFastFight() {
+        const button = document.querySelector('.fast-fight-button, [data-key="f"], .btn-szybka');
+        if (button) {
+            button.click();
+            addLog('INFO', 'Kliknięto szybka walka.');
+            return true;
+        }
+        return false;
+    }
+
     function runBotTick() {
+        if (!CONFIG.isRunning) return;
+        const engine = getEngine();
+        if (!engine || !engine.hero) return;
+
         try {
-            if (!CONFIG.isRunning || !window.Engine) return;
-
-
-            // 1. Sprawdzamy czy okno walki jest aktywne
-            if (window.Engine.battle && window.Engine.battle.show) {
-                console.log("[ExpBot] Trwa walka...");
-            
-                // Próba kliknięcia w przycisk "Szybka Walka" na nowym interfejsie
-                let fastFightBtn = document.querySelector('.fast-fight-button, [data-key="f"], .btn-szybka');
-                if (fastFightBtn) {
-                    fastFightBtn.click();
-                }
+            if (engine.battle && engine.battle.show) {
+                addLog('INFO', 'Trwa walka, próbuję szybka walka.');
+                clickFastFight();
                 return;
             }
 
-            // 2. Jeśli postać już się porusza, czekamy
-            if (window.Engine.hero && window.Engine.hero.moving) {
+            if (engine.hero.moving) {
                 return;
             }
 
-            // 3️⃣ First, try to find a passage (blue portal)
             const passage = getNearestPassage();
             if (passage) {
-                const heroX = window.Engine.hero.d.x;
-                const heroY = window.Engine.hero.d.y;
-                const dist = getDistance(heroX, heroY, passage.d.x, passage.d.y);
-                console.log(`[ExpBot] Najbliższe przejście → ID:${passage.d.id} Pos:${passage.d.x},${passage.d.y} Dist:${dist}`);
-                // Move to passage – try primary methods first
-                if (typeof window.Engine.hero.autoGoTo === 'function') {
-                    window.Engine.hero.autoGoTo({x: passage.d.x, y: passage.d.y});
-                } else if (typeof window.Engine.hero.goTo === 'function') {
-                    window.Engine.hero.goTo(passage.d.x, passage.d.y);
-                } else if (typeof window._g === 'function') {
-                    window._g(`walk=${passage.d.x},${passage.d.y}`);
-                } else {
-                    // Fallback: try to click the NPC element directly if accessible
-                    try {
-                        const el = document.querySelector(`[data-npc-id="${passage.d.id}"]`);
-                        if (el) { el.click(); console.log('[ExpBot] Clicked passage element directly'); }
-                        else console.warn('[ExpBot] No direct passage element found');
-                    } catch (e) { console.warn('[ExpBot] Fallback click failed', e); }
-                }
-                // If we are still far from the passage, wait for next tick
-                if (dist > 0) return;
+                addLog('INFO', 'Znaleziono przejście', passage.d.id, passage.d.x, passage.d.y);
+                if (walkTo(passage.d.x, passage.d.y)) return;
             }
-            // Debug when passage not found
-            debugNearbyNPCs();
-            // 4️⃣ If no passage, find nearest monster
+
             const target = getNearestMonster();
             if (target) {
-                const heroX = window.Engine.hero.d.x;
-                const heroY = window.Engine.hero.d.y;
-                const dist = getDistance(heroX, heroY, target.d.x, target.d.y);
-                console.log(`[ExpBot] Najbliższy potwór → ID:${target.d.id} Lvl:${target.d.lvl} Pos:${target.d.x},${target.d.y} Dist:${dist}`);
-
-                console.log(`[ExpBot] Idę do potwora! ID: ${target.d.id}, Lvl: ${target.d.lvl}, Poz: ${target.d.x},${target.d.y}`);
-            
-                // Komendy poruszania się dla silnika (zależnie od dokładnej wersji aktualizacji gry)
-                if (typeof window.Engine.hero.autoGoTo === 'function') {
-                    window.Engine.hero.autoGoTo({x: target.d.x, y: target.d.y});
-                } 
-                else if (typeof window.Engine.hero.goTo === 'function') {
-                    window.Engine.hero.goTo(target.d.x, target.d.y);
-                }
-                // Zapasowa metoda używana w niektórych buildach/dodatkach
-                else if (typeof window._g === 'function') {
-                    window._g(`walk=${target.d.x},${target.d.y}`);
-                }
-                else {
-                    console.warn("[ExpBot] Brak kompatybilnej metody poruszania się w silniku (Zaktualizowano grę?)");
-                }
-            } else {
-                // Brak potworów – optional fallback to drzewa
-                if (CONFIG.enableTreeFallback) {
-                    const tree = getNearestTree();
-                    if (tree) {
-                        console.log(`[ExpBot] Idę do drzewa (ID: ${tree.d.id})`);
-                        if (typeof window.Engine.hero.autoGoTo === 'function') {
-                            window.Engine.hero.autoGoTo({x: tree.d.x, y: tree.d.y});
-                        } else if (typeof window.Engine.hero.goTo === 'function') {
-                            window.Engine.hero.goTo(tree.d.x, tree.d.y);
-                        } else if (typeof window._g === 'function') {
-                            window._g(`walk=${tree.d.x},${tree.d.y}`);
-                        }
-                    }
-                }
-                // console.log("[ExpBot] Brak potworów na ekranie.");
+                addLog('INFO', 'Idę do potwora', target.d.id, target.d.lvl, target.d.x, target.d.y);
+                if (walkTo(target.d.x, target.d.y)) return;
             }
-        } catch (e) {
-            console.error("[ExpBot] Błąd w runBotTick:", e);
+
+            if (CONFIG.enableTreeFallback) {
+                const tree = getNearestTree();
+                if (tree) {
+                    addLog('INFO', 'Brak potworów, idę do drzewa', tree.d.id, tree.d.x, tree.d.y);
+                    walkTo(tree.d.x, tree.d.y);
+                }
+            }
+        } catch (error) {
+            addLog('ERROR', 'Błąd w runBotTick:', error);
         }
     }
 
-    // Tworzenie graficznego interfejsu
     function createUI() {
-        if (document.getElementById('expbot-ui-v2')) return; // Zabezpieczenie przed podwójnym dodaniem
+        if (document.getElementById('expbot-ui-v2')) return;
 
-        const uiContainer = document.createElement('div');
-        uiContainer.id = 'expbot-ui-v2';
-        uiContainer.style.position = 'fixed';
-        uiContainer.style.top = '10px';
-        uiContainer.style.left = '50%';
-        uiContainer.style.transform = 'translateX(-50%)';
-        uiContainer.style.zIndex = '999999';
-        uiContainer.style.background = 'rgba(0, 0, 0, 0.9)';
-        uiContainer.style.color = '#fff';
-        uiContainer.style.padding = '15px';
-        uiContainer.style.border = '2px solid #ffaa00';
-        uiContainer.style.borderRadius = '5px';
-        uiContainer.style.fontFamily = 'Verdana, sans-serif';
-        uiContainer.style.fontSize = '14px';
-        uiContainer.style.textAlign = 'center';
-        uiContainer.style.boxShadow = '0px 0px 10px rgba(0,0,0,0.5)';
+        const container = document.createElement('div');
+        container.id = 'expbot-ui-v2';
+        container.style.position = 'fixed';
+        container.style.top = '12px';
+        container.style.left = '50%';
+        container.style.transform = 'translateX(-50%)';
+        container.style.zIndex = '1000000';
+        container.style.background = 'rgba(0,0,0,0.86)';
+        container.style.color = '#fff';
+        container.style.padding = '12px';
+        container.style.border = '1px solid #888';
+        container.style.borderRadius = '8px';
+        container.style.fontFamily = 'Arial, sans-serif';
+        container.style.fontSize = '13px';
+        container.style.boxShadow = '0 0 12px rgba(0,0,0,0.45)';
 
         const title = document.createElement('div');
-        title.innerText = '⚙️ Auto ExpBot NI';
-        title.style.fontWeight = 'bold';
-        title.style.marginBottom = '10px';
-        uiContainer.appendChild(title);
+        title.innerText = 'ExpBot NI';
+        title.style.fontWeight = '700';
+        title.style.marginBottom = '8px';
+        container.appendChild(title);
 
-        const toggleBtn = document.createElement('button');
-        toggleBtn.innerText = 'START';
-        toggleBtn.style.padding = '8px 16px';
-        toggleBtn.style.cursor = 'pointer';
-        toggleBtn.style.background = '#28a745';
-        toggleBtn.style.color = 'white';
-        toggleBtn.style.border = 'none';
-        toggleBtn.style.borderRadius = '5px';
-        toggleBtn.style.fontWeight = 'bold';
-        toggleBtn.style.transition = '0.3s';
-
-        // Button for puzzle mode toggle, placed next to toggle
-        const puzzleBtn = document.createElement('button');
-        puzzleBtn.innerText = '🧩 Puzzles: ON';
-        puzzleBtn.style.padding = '8px 12px';
-        puzzleBtn.style.marginLeft = '8px';
-        puzzleBtn.style.cursor = 'pointer';
-        puzzleBtn.style.background = '#0069d9';
-        puzzleBtn.style.color = 'white';
-        puzzleBtn.style.border = 'none';
-        puzzleBtn.style.borderRadius = '5px';
-        puzzleBtn.style.fontWeight = 'bold';
-        puzzleBtn.style.transition = '0.3s';
-        puzzleBtn.onclick = () => {
-            CONFIG.enablePuzzles = !CONFIG.enablePuzzles;
-            puzzleBtn.innerText = `🧩 Puzzles: ${CONFIG.enablePuzzles ? 'ON' : 'OFF'}`;
-            console.log('[ExpBot] Puzzles', CONFIG.enablePuzzles ? 'enabled' : 'disabled');
-        };
-        
-        let botTimeout = null;
-
-        function botLoop() {
-            if (!CONFIG.isRunning) return;
-            runBotTick();
-            
-            // ANTY-BAN: Losowe opóźnienie odchylone o +/- 30% od bazowego czasu (żeby nie klikać równo co do milisekundy jak maszyna)
-            let randomVariation = CONFIG.intervalMs * 0.3;
-            let currentDelay = CONFIG.intervalMs + (Math.random() * randomVariation * 2 - randomVariation);
-            
-            botTimeout = setTimeout(botLoop, currentDelay);
-        }
-
-        toggleBtn.onclick = () => {
+        const startBtn = document.createElement('button');
+        startBtn.innerText = 'START';
+        startBtn.style.marginRight = '8px';
+        startBtn.style.padding = '6px 10px';
+        startBtn.style.border = 'none';
+        startBtn.style.borderRadius = '5px';
+        startBtn.style.cursor = 'pointer';
+        startBtn.style.background = '#28a745';
+        startBtn.style.color = '#fff';
+        startBtn.onclick = () => {
             CONFIG.isRunning = !CONFIG.isRunning;
             if (CONFIG.isRunning) {
-                toggleBtn.innerText = '🛑 STOP';
-                toggleBtn.style.background = '#dc3545';
-                botLoop();
-                console.log("[ExpBot] Uruchomiono auto-expa.");
+                startBtn.innerText = 'STOP';
+                startBtn.style.background = '#dc3545';
+                addLog('INFO', 'Bot uruchomiony.');
+                runBotTick();
             } else {
-                toggleBtn.innerText = '▶️ START';
-                toggleBtn.style.background = '#28a745';
-                clearTimeout(botTimeout);
-                console.log("[ExpBot] Zatrzymano auto-expa.");
+                startBtn.innerText = 'START';
+                startBtn.style.background = '#28a745';
+                addLog('INFO', 'Bot zatrzymany.');
             }
         };
+        container.appendChild(startBtn);
 
-        // --------------------
-        // 6️⃣  LOGS BUTTON (modal)
-        // --------------------
-// --------------------
-// 6️⃣  LOGS BUTTON (modal)
-// --------------------
-const logsBtn = document.createElement('button');
-logsBtn.innerText = '📜 Logs';
-logsBtn.style.padding = '8px 12px';
-logsBtn.style.marginLeft = '8px';
-logsBtn.style.cursor = 'pointer';
-logsBtn.style.background = '#6c757d';
-logsBtn.style.color = 'white';
-logsBtn.style.border = 'none';
-logsBtn.style.borderRadius = '5px';
-logsBtn.style.fontWeight = 'bold';
-logsBtn.style.transition = '0.3s';
-logsBtn.onclick = showLogModal;
-uiContainer.appendChild(logsBtn);
+        const logBtn = document.createElement('button');
+        logBtn.innerText = 'LOGI';
+        logBtn.style.padding = '6px 10px';
+        logBtn.style.border = 'none';
+        logBtn.style.borderRadius = '5px';
+        logBtn.style.cursor = 'pointer';
+        logBtn.style.background = '#007bff';
+        logBtn.style.color = '#fff';
+        logBtn.onclick = showLogModal;
+        container.appendChild(logBtn);
 
-// ---- COPY LOGS BUTTON ----
-const copyBtn = document.createElement('button');
-copyBtn.innerText = '📋 Copy';
-copyBtn.style.padding = '8px 12px';
-copyBtn.style.marginLeft = '8px';
-copyBtn.style.cursor = 'pointer';
-copyBtn.style.background = '#17a2b8';
-copyBtn.style.color = 'white';
-copyBtn.style.border = 'none';
-copyBtn.style.borderRadius = '5px';
-copyBtn.style.fontWeight = 'bold';
-copyBtn.style.transition = '0.3s';
-copyBtn.onclick = () => {
-    const text = LOG_BUFFER.map(e => `[${e.time}] ${e.level}: ${e.msg}`).join('\n');
-    navigator.clipboard.writeText(text).then(() => console.log('[ExpBot] Logi skopiowane do schowka.'));
-};
-uiContainer.appendChild(copyBtn);
-        
-        uiContainer.appendChild(puzzleBtn);
-        document.body.appendChild(uiContainer);
-        // Add icon near bag if exists
-        const bagIcon = document.querySelector('.bag, .inventory-bag, #bagIcon');
-        if (bagIcon) {
-            const menuIcon = document.createElement('span');
-            menuIcon.innerText = '⚙️';
-            menuIcon.title = 'ExpBot Options';
-            menuIcon.style.cursor = 'pointer';
-            menuIcon.style.marginLeft = '4px';
-            menuIcon.style.color = '#ffcc00';
-            menuIcon.onclick = () => {
-                // Simple toggle of UI visibility
-                const ui = document.getElementById('expbot-ui-v2');
-                if (ui) ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
-            };
-            bagIcon.parentNode.insertBefore(menuIcon, bagIcon.nextSibling);
-        }    }
-
-    // Uruchom UI po załadowaniu okna (z małym opóźnieniem by silnik gry zdążył wstać)
-    // Ensure UI is recreated if it disappears (e.g., after a map change)
-    function ensureUI() {
-        if (!document.getElementById('expbot-ui-v2')) {
-            console.warn('[ExpBot] UI element missing – recreating.');
-            createUI();
-        }
+        document.body.appendChild(container);
     }
-    // After page load, create UI and start a watchdog
+
+    function startLoop() {
+        runBotTick();
+        const delay = CONFIG.intervalMs + (Math.random() * 400 - 200);
+        setTimeout(startLoop, Math.max(500, delay));
+    }
+
     window.addEventListener('load', () => {
         setTimeout(() => {
             createUI();
-            // Check every 5 s whether UI still exists
-            setInterval(ensureUI, 5000);
-        }, 3000);
+            setInterval(() => {
+                if (!document.getElementById('expbot-ui-v2')) {
+                    createUI();
+                }
+            }, 4000);
+            startLoop();
+        }, 2200);
     });
-
 })();
