@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Margonem NI - Fresh Engine Bot v3.5
+// @name         Margonem NI - Fresh Engine Bot v3.7
 // @namespace    http://tampermonkey.net/
-// @version      3.5
-// @description  Naprawione wykrywanie zwykłych potworów (typ 1) na silniku Margonem NI.
+// @version      3.7
+// @description  W pełni stabilny bot oparty na bezpośrednich funkcjach ruchu silnika NI
 // @author       Ver
 // @match        https://*.margonem.pl/*
-// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.5
-// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.5
+// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.7
+// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.7
 // @grant        none
 // ==/UserScript==
 
@@ -14,69 +14,81 @@
     'use strict';
 
     const BOT_CONFIG = {
-        intervalMs: 1200,          // Czas sprawdzenia
+        intervalMs: 1000,          // Sprawdzanie sytuacji co 1 sekundę
         isRunning: false,          
     };
 
-    console.log("[Bot 3.5] Załadowany. Pełne spektrum typów NPC aktywne.");
+    console.log("[Bot 3.7] Załadowany. Autorskie sterowanie ruchem NI aktywne.");
 
-    // 1. ZAAWANSOWANE SZUKANIE POTWORÓW
+    // 1. ANATOMIA POSZUKIWANIA CELU
     function findNearestMonster() {
-        // Bezpieczne pobranie listy NPC z silnika gry
-        const npcList = (window.g && window.g.npc) ? window.g.npc : (window.Engine && window.Engine.npc ? window.Engine.npc : null);
-        if (!npcList || !window.g || !window.g.hero) return null;
+        if (!window.Engine || !window.Engine.npc || !window.Engine.hero) return null;
 
         let nearestNpc = null;
         let minDistance = Infinity;
 
-        const heroX = window.g.hero.x;
-        const heroY = window.g.hero.y;
+        const heroX = window.Engine.hero.d.x;
+        const heroY = window.Engine.hero.d.y;
+        const npcList = window.Engine.npc;
 
         for (let id in npcList) {
             const npc = npcList[id];
 
-            // Typ 1 = Zwykły potwór, Typ 2 = Agresywny, Typ 3 = Elita, Typ 4 = Elita II / Heros
-            if (npc.type === 1 || npc.type === 2 || npc.type === 3 || npc.type === 4) {
+            // Typ 1 (zwykły), 2 (agresywny), 3 (elita), 4 (heros/e2)
+            if (npc.d && (npc.d.type === 1 || npc.d.type === 2 || npc.d.type === 3 || npc.d.type === 4)) {
                 
-                // Warunek żywego potwora: wt (wirtualne zdrowie/życie) musi być większe od 0
-                if (typeof npc.wt !== 'undefined' && npc.wt === 0) continue; 
+                // Pomijaj martwe potwory
+                if (npc.d.del || (typeof npc.d.wt !== 'undefined' && npc.d.wt === 0)) continue; 
 
-                // Obliczanie odległości (Manhattan)
-                const distance = Math.abs(npc.x - heroX) + Math.abs(npc.y - heroY);
+                // Odległość Manhattan
+                const distance = Math.abs(npc.d.x - heroX) + Math.abs(npc.d.y - heroY);
 
                 if (distance < minDistance) {
                     minDistance = distance;
-                    nearestNpc = npc;
+                    nearestNpc = npc.d; // Zwracamy czyste dane potwora
                 }
             }
         }
         return nearestNpc;
     }
 
-    // 2. GŁÓWNA LOGIKA AKCJI
+    // 2. REAKCJA I WYKONANIE RUCHU
     function botTick() {
         if (!BOT_CONFIG.isRunning) return;
 
-        // Blokada działania podczas walki lub gdy postać padła
-        if (window.g && (window.g.battle || window.g.dead)) return;
+        // Blokady: walka, śmierć, otwarty dialog
+        if (!window.Engine || window.Engine.battle || (window.Engine.hero && window.Engine.hero.d.dead) || document.getElementById('dialogview')) {
+            return;
+        }
+
+        // Blokada jeśli postać aktualnie idzie – pozwólmy jej dobiec do celu
+        if (window.Engine.hero && window.Engine.hero.isMoving) return;
 
         const target = findNearestMonster();
 
         if (target) {
-            console.log(`[Bot 3.5] Namierzono cel: ${target.name} (ID: ${target.id}) na pozycji [${target.x}, ${target.y}]`);
+            console.log(`[Bot 3.7] Cel: ${target.name} (ID: ${target.id}) na pozycjach [${target.x}, ${target.y}]`);
 
-            // Wysłanie natywnej komendy podejścia i ataku do silnika Margonem
-            if (window._g) {
-                window._g("talk", { id: target.id });
-            } else if (window.g.actions && window.g.actions.doWalk) {
-                window.g.actions.doWalk(target.x, target.y);
+            // WYKONANIE AKCJI:
+            // Krok A: Wydajemy silnikowi rozkaz pójścia na koordynaty potwora
+            if (window.Engine.hero && typeof window.Engine.hero.moveTo === "function") {
+                window.Engine.hero.moveTo(target.x, target.y);
             }
+
+            // Krok B: Wysyłamy pakiet rozpoczęcia rozmowy/ataku bezpośrednio przez serwer gry
+            if (window.Engine.communication && window.Engine.communication.send) {
+                // Dokładnie to wysyła gra po podejsciu do NPC
+                window.Engine.communication.send(`talk&id=${target.id}`);
+            } else if (window._g) {
+                window._g("talk", { id: target.id });
+            }
+
         } else {
-            console.log("[Bot 3.5] Brak potworów w zasięgu wzroku bota.");
+            console.log("[Bot 3.7] Szukam przeciwników...");
         }
     }
 
-    // 3. GRAFICZNY PANEL KONTROLNY
+    // 3. WIZUALNY PANEL KONTROLNY
     function createBotUI() {
         if (document.getElementById('margo-bot-v3-btn')) return;
 
@@ -101,11 +113,11 @@
             if (BOT_CONFIG.isRunning) {
                 btn.innerText = 'BOT: ON';
                 btn.style.backgroundColor = '#28a745';
-                console.log("[Bot 3.5] Bot zaczął pracować.");
+                console.log("[Bot 3.7] Włączony.");
             } else {
                 btn.innerText = 'BOT: OFF';
                 btn.style.backgroundColor = '#dc3545';
-                console.log("[Bot 3.5] Bot zatrzymany.");
+                console.log("[Bot 3.7] Wyłączony.");
             }
         };
 
