@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.4
+// @version      2.5
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -245,12 +245,18 @@
             if (passage) {
                 addLog('INFO', 'Znaleziono przejście', passage.d.id, passage.d.x, passage.d.y);
                 if (walkTo(passage.d.x, passage.d.y)) return;
+                addLog('WARN', 'Nie udało się ruszyć do przejścia');
+            } else {
+                addLog('DEBUG', 'Brak przejścia do zabrania');
             }
 
             const target = getNearestMonster();
             if (target) {
                 addLog('INFO', 'Idę do potwora', target.d.id, target.d.lvl, target.d.x, target.d.y);
                 if (walkTo(target.d.x, target.d.y)) return;
+                addLog('WARN', 'Nie udało się ruszyć do potwora');
+            } else {
+                addLog('DEBUG', 'Brak potwora zgodnego z kryteriami');
             }
 
             if (CONFIG.enableTreeFallback) {
@@ -258,6 +264,9 @@
                 if (tree) {
                     addLog('INFO', 'Brak potworów, idę do drzewa', tree.d.id, tree.d.x, tree.d.y);
                     if (walkTo(tree.d.x, tree.d.y)) return;
+                    addLog('WARN', 'Nie udało się ruszyć do drzewa');
+                } else {
+                    addLog('DEBUG', 'Brak drzewa do fallbacku');
                 }
             }
 
@@ -265,7 +274,11 @@
                 const point = getRandomNearbyPoint();
                 if (point) {
                     addLog('INFO', 'Brak celów, idę losowo', point.x, point.y);
-                    walkTo(point.x, point.y);
+                    if (!walkTo(point.x, point.y)) {
+                        addLog('WARN', 'Nie udało się ruszyć losowo');
+                    }
+                } else {
+                    addLog('DEBUG', 'Nie udało się wyznaczyć punktu losowego');
                 }
             }
         } catch (error) {
