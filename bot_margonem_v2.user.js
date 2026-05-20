@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         Margonem NI - Auto Exp Bot (Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @description  Upraszczony bot dla Margonem NI działający na silniku gry.
 // @author       Antigravity
 // @match        https://*.margonem.pl/*
@@ -198,20 +198,27 @@
 
     function walkTo(x, y) {
         const engine = getEngine();
-        if (!engine || !engine.hero) return false;
+        if (!engine || !engine.hero) {
+            addLog('ERROR', 'walkTo: brak silnika lub bohatera');
+            return false;
+        }
 
         if (typeof engine.hero.autoGoTo === 'function') {
+            addLog('DEBUG', 'walkTo używa autoGoTo', x, y);
             engine.hero.autoGoTo({ x, y });
             return true;
         }
         if (typeof engine.hero.goTo === 'function') {
+            addLog('DEBUG', 'walkTo używa goTo', x, y);
             engine.hero.goTo(x, y);
             return true;
         }
         if (typeof window._g === 'function') {
+            addLog('DEBUG', 'walkTo używa _g walk', x, y);
             window._g(`walk=${x},${y}`);
             return true;
         }
+        addLog('ERROR', 'walkTo: brak dostępnej metody ruchu', x, y);
         return false;
     }
 
@@ -244,11 +251,15 @@
             // Pomijamy przejścia, by bot nie podchodził do roślin i fałszywych obiektów.
             const target = getNearestMonster();
             if (target) {
-                addLog('INFO', 'Idę do potwora', target.d.id, target.d.lvl, target.d.x, target.d.y);
+                const heroX = engine.hero.d.x;
+                const heroY = engine.hero.d.y;
+                const dist = getDistance(heroX, heroY, target.d.x, target.d.y);
+                addLog('INFO', 'Idę do potwora', target.d.id, 'lvl', target.d.lvl, 'pos', target.d.x, target.d.y, 'dist', dist);
                 if (walkTo(target.d.x, target.d.y)) return;
                 addLog('WARN', 'Nie udało się ruszyć do potwora');
             } else {
-                addLog('DEBUG', 'Brak potwora zgodnego z kryteriami');
+                const allCount = getNpcList().filter(isMonster).length;
+                addLog('DEBUG', 'Brak potwora zgodnego z kryteriami', 'wszystkich potworów', allCount);
             }
 
             if (CONFIG.enableTreeFallback) {
