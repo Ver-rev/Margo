@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Margonem NI - Fresh Engine Bot v3.2
+// @name         Margonem NI - Fresh Engine Bot v3.3
 // @namespace    http://tampermonkey.net/
-// @version      3.2
-// @description  Zbudowany od zera bot oparty na silniku gry Margonem NI z wyłączonym limitem poziomów potworów.
+// @version      3.3
+// @description  Zbudowany od zera bot oparty na silniku gry Margonem NI z pełną emulacją pakietów ruchu.
 // @author       Ver
 // @match        https://*.margonem.pl/*
-// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.2
-// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.2
+// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.3
+// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.3
 // @grant        none
 // ==/UserScript==
 
@@ -19,7 +19,7 @@
         isRunning: false,          // Stan początkowy bota
     };
 
-    console.log("[Bot 3.2] Skrypt załadowany z wyłączonym filtrem poziomu mobów.");
+    console.log("[Bot 3.3] Skrypt załadowany. Gotowy na emulację ruchu NI.");
 
     // 2. FUNKCJA SZUKAJĄCA POTWORÓW
     function findNearestMonster() {
@@ -40,7 +40,7 @@
                 // Ignorujemy trupy (wt == 0 oznacza, że potwór nie żyje)
                 if (npc.wt === 0) continue; 
 
-                // Obliczamy odległość w kratkach (Manhattan distance - idealna dla siatki Margonem)
+                // Odległość na siatce (Manhattan distance)
                 const distance = Math.abs(npc.x - heroX) + Math.abs(npc.y - heroY);
 
                 if (distance < minDistance) {
@@ -56,7 +56,7 @@
     function botTick() {
         if (!BOT_CONFIG.isRunning) return;
 
-        // Jeśli postać walczy, nie rób nic
+        // Jeśli postać walczy, nic nie rób
         if (window.g && window.g.battle) {
             return;
         }
@@ -64,17 +64,23 @@
         const target = findNearestMonster();
 
         if (target) {
-            console.log(`[Bot 3.2] Idę do: ${target.name} (Pozycja: ${target.x}, ${target.y})`);
+            console.log(`[Bot 3.3] Atakuję/Idę do: ${target.name} na pozycję (${target.x}, ${target.y})`);
             
-            // Wysłanie komendy ruchu bezpośrednio do silnika gry NI
-            if (window._g) {
-                window._g("walk", {x: target.x, y: target.y});
-            } else if (window.g && window.g.actions && window.g.actions.doWalk) {
-                // Alternatywna metoda wywołania ruchu w niektórych wersjach NI
+            // --- OFICJALNY SYSTEM RUCHU MARGONEM NI ---
+            // Sposób A: Przez główny silnik akcji gry
+            if (window.g.actions && window.g.actions.doWalk) {
                 window.g.actions.doWalk(target.x, target.y);
+            } 
+            // Sposób B: Bezpośredni pakiet sieciowy do Gateway (najskuteczniejszy w NI)
+            else if (window.g.gateway && window.g.gateway.send) {
+                window.g.gateway.send(`walk&x=${target.x}&y=${target.y}`);
+            }
+            // Sposób C: Tradycyjna funkcja wejścia
+            else if (window._g) {
+                window._g("walk", {x: target.x, y: target.y});
             }
         } else {
-            console.log("[Bot 3.2] Brak żywych potworów na całej mapie.");
+            console.log("[Bot 3.3] Brak żywych potworów na całej mapie.");
         }
     }
 
@@ -103,11 +109,11 @@
             if (BOT_CONFIG.isRunning) {
                 btn.innerText = 'BOT: ON';
                 btn.style.backgroundColor = '#28a745';
-                console.log("[Bot 3.2] Włączony.");
+                console.log("[Bot 3.3] Włączony.");
             } else {
                 btn.innerText = 'BOT: OFF';
                 btn.style.backgroundColor = '#dc3545';
-                console.log("[Bot 3.2] Wyłączony.");
+                console.log("[Bot 3.3] Wyłączony.");
             }
         };
 
