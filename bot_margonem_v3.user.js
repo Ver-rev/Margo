@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Margonem NI - Fresh Engine Bot v3.8
+// @name         Margonem NI - Fresh Engine Bot v3.9
 // @namespace    http://tampermonkey.net/
-// @version      3.8
-// @description  Ominięcie startBlockade za pomocą natywnego zdarzenia wejścia w interakcję
+// @version      3.9
+// @description  Połączenie stabilnego ruchu z v2.9 z zaawansowanym wykrywaniem potworów typu 1 z v3.x
 // @author       Ver
 // @match        https://*.margonem.pl/*
-// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.8
-// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.8
+// @updateURL    https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.9
+// @downloadURL  https://raw.githubusercontent.com/Ver-rev/Margo/main/bot_margonem_v3.user.js?v=3.9
 // @grant        none
 // ==/UserScript==
 
@@ -14,78 +14,126 @@
     'use strict';
 
     const BOT_CONFIG = {
-        intervalMs: 1200,          // Bezpieczny interwał sprawdzania
+        intervalMs: 1200,          // Odstęp między akcjami (zgodny z v2.9)
         isRunning: false,          
     };
 
-    console.log("[Bot 3.8] Załadowany. Silnik interakcji bezblokadowej aktywne.");
+    console.log("[Bot 3.9] Załadowany. Przywrócono stabilny silnik ruchu z wersji 2.x.");
 
-    // 1. SZUKANIE NAJBLIŻSZEGO POTWORA (W oparciu o czysty silnik NI)
+    // 1. STATYCZNE POBIERANIE ODLEGŁOŚCI (z wersji 2.9)
+    function getDistance(x1, y1, x2, y2) {
+        return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2));
+    }
+
+    // 2. FILTR POTWORÓW (Wychwytuje typ 1, 2, 3, 4 oraz sprawdza punkty życia)
     function findNearestMonster() {
-        if (!window.Engine || !window.Engine.npc || !window.Engine.hero) return null;
+        if (!window.Engine || !window.Engine.npcs || !window.Engine.hero) return null;
+
+        // Bezpieczne pobranie listy z menedżera npcs (tak jak w v2.9)
+        const npcs = window.Engine.npcs.check();
+        const npcList = Array.isArray(npcs) ? npcs : Object.values(npcs);
 
         let nearestNpc = null;
         let minDistance = Infinity;
 
         const heroX = window.Engine.hero.d.x;
         const heroY = window.Engine.hero.d.y;
-        const npcList = window.Engine.npc;
 
-        for (let id in npcList) {
-            const npc = npcList[id];
+        for (const npc of npcList) {
+            if (!npc || !npc.d) continue;
 
-            if (npc.d && (npc.d.type === 1 || npc.d.type === 2 || npc.d.type === 3 || npc.d.type === 4)) {
-                if (npc.d.del || (typeof npc.d.wt !== 'undefined' && npc.d.wt === 0)) continue; 
+            // Typy potworów: 1 = zwykły (kwiatek), 2 = agresywny, 3 = elita, 4 = heros/e2
+            if (npc.d.type === 1 || npc.d.type === 2 || npc.d.type === 3 || npc.d.type === 4) {
+                
+                // Warunki eliminujące martwe moby
+                if (npc.d.del || (typeof npc.d.wt !== 'undefined' && npc.d.wt === 0)) continue;
 
-                const distance = Math.abs(npc.d.x - heroX) + Math.abs(npc.d.y - heroY);
-
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearestNpc = npc; // Zwracamy pełny obiekt silnika NPC, nie tylko dane .d
+                const dist = getDistance(heroX, heroY, npc.d.x, npc.d.y);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    nearestNpc = npc;
                 }
             }
         }
         return nearestNpc;
     }
 
-    // 2. GŁÓWNA LOGIKA WYKONYWANIA AKCJI
+    // 3. STABILNA FUNKCJA RUCHU (Przeniesiona bezpośrednio z v2.9)
+    function walkTo(x, y) {
+        const engine = window.Engine;
+        if (!engine || !engine.hero) return false;
+
+        if (typeof engine.hero.autoGoTo === 'function') {
+            engine.hero.autoGoTo({ x, y });
+            return true;
+        }
+        if (typeof engine.hero.goTo === 'function') {
+            engine.hero.goTo(x, y);
+            return true;
+        }
+        if (typeof window._g === 'function') {
+            window._g(`walk=${x},${y}`);
+            return true;
+        }
+        return false;
+    }
+
+    // 4. INICJOWANIE WALKI (Zabezpieczony atak z wersji 2.9)
+    function attackMonster(npc) {
+        if (!npc || !npc.d) return false;
+        const npcId = npc.d.id;
+
+        if (typeof window._g === 'function') {
+            window._g('fight&id=' + npcId);
+            return true;
+        }
+        const npcEl = document.querySelector(`#npc${npcId}, [data-id="${npcId}"], .npc-${npcId}`);
+        if (npcEl) {
+            npcEl.click();
+            return true;
+        }
+        return false;
+    }
+
+    // 5. GŁÓWNA PĘTLA BOTA
     function botTick() {
         if (!BOT_CONFIG.isRunning) return;
+        const engine = window.Engine;
+        if (!engine || !engine.hero) return;
 
-        // Jeśli trwa walka, dialog, lub postać nie żyje - stój
-        if (!window.Engine || window.Engine.battle || (window.Engine.hero && window.Engine.hero.d.dead) || document.getElementById('dialogview')) {
+        // Obsługa automatycznego zamykania szybkiej walki
+        if (engine.battle && engine.battle.show) {
+            const fastFightBtn = document.querySelector('.fast-fight-button, [data-key="f"], .btn-szybka');
+            if (fastFightBtn) fastFightBtn.click();
             return;
         }
 
-        // Jeśli postać już biegnie, czekaj
-        if (window.Engine.hero && window.Engine.hero.isMoving) return;
+        // Jeśli postać aktualnie biegnie, pozwól jej dobiec
+        if (engine.hero.moving) return;
 
-        const targetObj = findNearestMonster();
+        const target = findNearestMonster();
 
-        if (targetObj && targetObj.d) {
-            const target = targetObj.d;
-            console.log(`[Bot 3.8] Namierzono: ${target.name} (ID: ${target.id}) na [${target.x}, ${target.y}]`);
+        if (target) {
+            const heroX = engine.hero.d.x;
+            const heroY = engine.hero.d.y;
+            const dist = getDistance(heroX, heroY, target.d.x, target.d.y);
 
-            // METODA SPRAWDZONA: Emulacja wywołania interakcji przez menedżer interfejsu (Omija startBlockade)
-            if (window.Engine.allight && window.Engine.allight.clickNpc) {
-                // Wywołujemy natywną dla silnika funkcję kliknięcia w NPC
-                window.Engine.allight.clickNpc(target.id);
-            } 
-            // METODA REZERWOWA: Jeśli gra zmieniła strukturę obiektów, uderzamy w standardowy Interface Manager
-            else if (window.Engine.interface && window.Engine.interface.action) {
-                window.Engine.interface.action("talk", { id: target.id });
-            }
-            // METODA TRZECIEGO STOPNIA: Bezpośrednie wysłanie żądania interakcji bez wywoływania ruchu z poziomu JS
-            else if (window.Engine.communication && window.Engine.communication.send) {
-                window.Engine.communication.send(`talk&id=${target.id}`);
+            console.log(`[Bot 3.9] Cel: ${target.d.name} (ID: ${target.d.id}) Odległość: ${dist}`);
+
+            // Jeśli jesteśmy tuż obok potwora (dist <= 1), bijemy!
+            if (dist <= 1) {
+                attackMonster(target);
+                return;
             }
 
+            // Jeśli jesteśmy dalej, używamy sprawdzonego podejścia z v2.9
+            walkTo(target.d.x, target.d.y);
         } else {
-            console.log("[Bot 3.8] Szukam celów...");
+            console.log("[Bot 3.9] Brak żywych potworów (typu 1, 2, 3, 4) na mapie.");
         }
     }
 
-    // 3. PANEL UI
+    // 6. NOWY PANEL UI (Dostosowany do prawego dolnego rogu)
     function createBotUI() {
         if (document.getElementById('margo-bot-v3-btn')) return;
 
@@ -110,11 +158,11 @@
             if (BOT_CONFIG.isRunning) {
                 btn.innerText = 'BOT: ON';
                 btn.style.backgroundColor = '#28a745';
-                console.log("[Bot 3.8] Uruchomiony.");
+                console.log("[Bot 3.9] Start.");
             } else {
                 btn.innerText = 'BOT: OFF';
                 btn.style.backgroundColor = '#dc3545';
-                console.log("[Bot 3.8] Zatrzymany.");
+                console.log("[Bot 3.9] Stop.");
             }
         };
 
