@@ -21,7 +21,7 @@
         enableTreeFallback: false,
         enableRandomFallback: true,
         randomFallbackRange: 8,
-        passageTypes: [],
+        passageTypes: [7], // Najczęściej typ 7 oznacza przejście/portal w Margonem
         enablePassageDebug: false
     };
 
@@ -263,6 +263,18 @@
             } else {
                 const allCount = getNpcList().filter(isMonster).length;
                 addLog('DEBUG', 'Brak potwora zgodnego z kryteriami', 'wszystkich potworów', allCount);
+            }
+
+            const passage = getNearestPassage();
+            if (passage) {
+                const heroX = engine.hero.d.x;
+                const heroY = engine.hero.d.y;
+                const passageDist = getDistance(heroX, heroY, passage.d.x, passage.d.y);
+                addLog('INFO', 'Brak potworów, idę do przejścia', passage.d.id, passage.d.x, passage.d.y, 'dist', passageDist);
+                if (walkTo(passage.d.x, passage.d.y)) return;
+                addLog('WARN', 'Nie udało się ruszyć do przejścia');
+            } else {
+                addLog('DEBUG', 'Brak przejścia do fallbacku lub passageTypes nie pasuje');
             }
 
             if (CONFIG.enableTreeFallback) {
